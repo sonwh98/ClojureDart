@@ -7626,7 +7626,7 @@
   "Flushes the output stream that is the current value of *out*"
   []
   (try
-    (.flush *out*)
+    (.flush ^dynamic *out*)
     (catch :default _
       (try
         (.flush dart-io/stdout)
