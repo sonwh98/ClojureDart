@@ -125,14 +125,15 @@
                 g3 (.group m 3)
                 g4 (.group m 4)]
             (when (or
-                    (and g3 (.endsWith g3 ":/"))
+                    (and g3 (.endsWith g3 ":"))
                     (.endsWith g4 ":")
                     (not= -1 (.indexOf token "::" 1)))
-              (FormatException. (str "Invalid token: " token)))
+              (throw (FormatException. (str "Invalid token: " token))))
             (if g1
-              (if-some [nsym (if g3 (resolveAlias *resolver* (symbol nil g3)) (currentNS *resolver*))]
+              (if-some [nsym (when (some? *resolver*)
+                               (if g3 (resolveAlias *resolver* (symbol nil g3)) (currentNS *resolver*)))]
                 (keyword (name nsym) g4)
-                (FormatException. (str "Invalid token: " token)))
+                (throw (FormatException. (str "Invalid token: " token))))
               (if g2
                 (keyword g3 g4)
                 (symbol g3 g4))))
@@ -204,6 +205,28 @@
 
 (defn mk-read-coll [closing-delim mk-coll]
   (let [closing-cu (int closing-delim)
+        ; like do-read but returns with an empty q when it reaches the
+        ; closing delimiter (e.g. after a discard or a comment)
+        do-read-item
+        (fn self
+          ([^ReaderState {:flds [stack]}] (.removeLast stack))
+          ([^ReaderState {:flds [stack q] :as state} ^String s ^int from ^int to]
+           (if (.-isNotEmpty q)
+             (do
+               (.removeLast stack)
+               from)
+             (let [from (skip-space s from to)]
+               (cond
+                 (neg? from) from
+                 (== closing-cu (.codeUnitAt s from))
+                 (do
+                   (.removeLast stack)
+                   from)
+                 :else
+                 (let [from (dispatch state s from to)]
+                   (if (neg? from)
+                     from
+                     (self state s from to))))))))
         do-read-coll
         (fn
           ([^ReaderState state] (throw (Exception "EOF while reading")))
@@ -221,10 +244,11 @@
                      (.-length! stack n-2)
                      (.add q (mk-coll items))
                      (inc from))
-                   (let [from (read state s from to)]
+                   (let [from (do (.add stack do-read-item)
+                                (do-read-item state s from to))]
                      (if (neg? from)
                        from
-                       (recur from))))
+                       (recur (skip-space s from to)))))
                  :else -1)))))]
     (fn
       ([^ReaderState state] (throw (Exception "EOF encoutered, expecting closing delimiter.")))
@@ -460,7 +484,7 @@
              from
              (let [x (.removeFirst q)
                    ns (case x
-                        "::" (name (currentNS *resolver*))
+                        "::" (name (currentNS (bound-resolver "#::{}")))
                         (let [k (interpret-token x)]
                           (when-not (simple-keyword? k)
                             (throw (Exception "Only simple keywords can be used as namespaces in namespaced maps.")))
@@ -499,12 +523,13 @@
         (post-read
           (if (nil? args-env)
             interpret-token
-            (fn [token]
+            (fn [^String token]
               (let [n (case token
                         "%" 1
                         "%&" -1
                         (or
-                          (let [n (interpret-token token)]
+                          (let [n (try (interpret-token (.substring token 1))
+                                       (catch FormatException _ nil))]
                             (when (dart/is? n num)
                               (let [n (.toInt ^num n)]
                                 (when (or (pos? n) (= -1 n))
@@ -515,7 +540,8 @@
                     (. args-env "[]=" n sym)
                     sym))))))
         _ (.add stack post)
-        from (read-token state s from to)]
+        ; from is past the %, the token must include it
+        from (read-token state s (dec from) to)]
     (if (neg? from)
       from
       (post state s from to))))
@@ -594,11 +620,19 @@
                 throw new ns try case* quote do var let* loop* recur if fn* letfn def reify* deftype*
                 defprotocol* defmethod* defmulti* extend-type-protocol*} form))
 
+(defn- bound-resolver [what]
+  (or *resolver*
+    (throw (FormatException.
+             (str "Can't read " what ": cljd.reader/*resolver* is not bound.")))))
+
 (defn- syntax-quote [form]
   (cond
     (special-symbol? form) (list 'quote form)
     (symbol? form)
     (let [nsform (namespace form)
+          _ (when-not (or (and (nil? nsform) (.endsWith (name form) "#"))
+                        (and (nil? nsform) (.startsWith (name form) ".")))
+              (bound-resolver (str "syntax-quoted symbol " form)))
           nameform (name form)]
       (->> (cond
              (and (nil? nsform) (.endsWith nameform "#"))
@@ -751,7 +785,8 @@
        (.removeLast stack)
        (if-some [rd (when (< cu 128) (aget dispatch-macros cu))]
          (rd state s (inc from) to)
-         (read-ctor state s from to))))))
+         (read-ctor state s from to)))
+     -1)))
 
 (defn read-dispatch-macro
   [^ReaderState {:flds [q stack] :as state} ^String s ^int from ^int to]
@@ -761,6 +796,13 @@
 (defn unexpected [msg]
   (fn [_ _ _ _]
     (throw (FormatException (str "Unexpected " msg ".")))))
+
+(defn- check-duplicates! [xs]
+  (reduce (fn [seen x]
+            (if (contains? seen x)
+              (throw (FormatException (str "Duplicate key: " (pr-str x))))
+              (conj seen x)))
+    #{} xs))
 
 (def macros
   (doto (List/filled 128 nil)
@@ -775,7 +817,10 @@
       (mk-read-coll "}"
         (fn [kvs]
           (if (even? (count kvs))
-            (apply hash-map kvs)
+            (let [m (apply hash-map kvs)]
+              (when-not (== (* 2 (count m)) (count kvs))
+                (check-duplicates! (take-nth 2 kvs)))
+              m)
             (throw (FormatException "Map literal must contain an even number of forms"))))))
     (aset (int "}") (unexpected "closing curly brace"))
     (aset (int "[") (mk-read-coll "]" vec))
@@ -790,7 +835,12 @@
   (doto (List/filled 128 nil)
     (aset (int "_") discard)
     (aset (int "(") read-fn)
-    (aset (int "{") (mk-read-coll "}" set))
+    (aset (int "{") (mk-read-coll "}"
+                      (fn [items]
+                        (let [s (set items)]
+                          (when-not (== (count s) (count items))
+                            (check-duplicates! items))
+                          s))))
     (aset (int \") read-regexp)
     (aset (int \') (mk-read-wrapped 'var))
     (aset (int \:) read-namespaced-map)

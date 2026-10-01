@@ -553,3 +553,57 @@
       '. 'set! 'dart/is? 'dart/await 'dart/async-barrier 'dart/run-zoned 'dart/assert 'dart/type-like
       'throw 'new 'ns 'try 'case* 'quote 'do 'var 'let* 'loop* 'recur 'if 'fn* 'letfn 'def 'reify* 'deftype*
       'defprotocol* 'defmethod* 'defmulti* 'extend-type-protocol*)))
+
+(deftest read-percent-symbols
+  (is (= '%1 (read-string "%1")))
+  (is (= '%x (read-string "%x")))
+  (is (= '%& (read-string "%&")))
+  (is (= '%x/y (read-string "%x/y")))
+  (is (= (symbol "%" "foo") (read-string "%/foo")))
+  (is (= '% (read-string "%")))
+  (is (= '[% %1 %& (f %) {:k %}] (read-string "[% %1 %& (f %) {:k %}]"))))
+
+(deftest read-fn-args
+  (is (= '(fn* [x1] (f x1)) (rename-syms (r/read-string "#(f %)") '#{fn* f})))
+  (is (= '(fn* [& x1] (f x1)) (rename-syms (r/read-string "#(f %&)") '#{fn* f &})))
+  (is (= '(fn* [x1] (+ x1 1)) (rename-syms (r/read-string "#(+ %1 1)") '#{fn* +})))
+  (is (= '(fn* [x1 x2 & x3] (f x1 x2 x3 x1))
+        (rename-syms (r/read-string "#(f % %2 %& %1)") '#{fn* f &})))
+  (is (thrown-with-msg? FormatException #"arg literal must be %, %& or %integer"
+        (r/read-string "#(f %x)"))))
+
+(deftest read-duplicate-keys
+  (is (thrown-with-msg? FormatException #"Duplicate key: :a" (r/read-string "{:a 1 :a 2}")))
+  (is (thrown-with-msg? FormatException #"Duplicate key: 1" (r/read-string "#{1 1}")))
+  (is (thrown-with-msg? FormatException #"Duplicate key: x" (r/read-string "#{x x}"))))
+
+(deftest read-without-resolver
+  (is (thrown-with-msg? FormatException #"Invalid token: ::foo" (r/read-string "::foo")))
+  (is (thrown-with-msg? FormatException #"Invalid token: ::a/foo" (r/read-string "::a/foo")))
+  (is (thrown-with-msg? FormatException #"\*resolver\* is not bound" (r/read-string "`x")))
+  (is (thrown-with-msg? FormatException #"\*resolver\* is not bound" (r/read-string "`(a ~b)")))
+  (is (thrown-with-msg? FormatException #"\*resolver\* is not bound" (r/read-string "#::{:a 1}")))
+  (is (= '(cljd.core/seq (cljd.core/concat (cljd.core/list 1) (cljd.core/list c)))
+        (r/read-string "`(1 ~c)"))))
+
+(deftest read-space-before-closing-delimiter
+  (are [s x] (= x (read-string s))
+    "[1 2 ]" [1 2]
+    "[1 2\t]" [1 2]
+    "[1 2\n]" [1 2]
+    "[1 2,]" [1 2]
+    "{:a 1 }" {:a 1}
+    "(1 )" '(1)
+    "#{1 }" #{1}
+    "[[1 ] [2 ] ]" [[1] [2]]
+    "[1 #_x]" [1]
+    "[1 #_x ]" [1]
+    "(1 #_2)" '(1)
+    "[1 ;c\n]" [1])
+  (is (= '(fn* [x1] (f x1)) (rename-syms (r/read-string "#(f % )") '#{fn* f}))))
+
+(deftest read-invalid-tokens
+  (is (thrown-with-msg? FormatException #"Invalid token: foo:" (r/read-string "foo:")))
+  (is (thrown-with-msg? FormatException #"Invalid token: a::b" (r/read-string "a::b")))
+  (is (thrown-with-msg? FormatException #"Invalid token: x:/y" (r/read-string "x:/y")))
+  (is (= :foo (r/read-string ":foo"))))
