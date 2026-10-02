@@ -1,0 +1,4 @@
+[tools]
+flutter = "3.47.6-stable"
+java = "temurin-21"
+clojure = "latest"
