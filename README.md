@@ -13,9 +13,23 @@ How can you help?
 * **Sponsor us** (individual sponsorship is nice but corporate sponshorship is great). You can sponsor any of us or both, it doesn't matter, we split ([:heart: Baptiste](https://github.com/sponsors/dupuchba)  [:heart: Christophe](https://github.com/sponsors/cgrand)).
 * **Contract us** for assistance, training, consulting or dev (can be as mundane as requesting to port a clj/cljs lib to cljd)
 
-# Cheatsheet
+# Documentation
 
-We have a [cheatsheet](doc/ClojureDart%20Cheatsheet.pdf) covering ClojureDart specifics on one side and Flutter programming on the other side.
+To get a working ClojureDart setup quickly, start with either:
+
+- [Flutter QuickStart](doc/flutter-quick-start.md) to build GUIs
+- [Plain Dart QuickStart](doc/quick-start.md) to build CLI apps.
+
+From there, you can consult the following documentation:
+
+- [doc/README.md](doc/README.md) — comprehensive overview of ClojureDart language features
+- [ClojureDart Cheatsheet](doc/ClojureDart%20Cheatsheet.pdf) — printable 2-pager to keep on your desk as a reference
+- [WIP] [ClojureDart Book](doc/BOOK.md) — more in-depth exposition of the what, why, and how of ClojureDart
+- [FAQ](doc/FAQ.md) — answers to Frequently Asked Questions
+- [Differences with Clojure](doc/differences.md) — for if you are already familiar with JVM Clojure
+- [Testing](doc/TESTING.md) — writing and running tests
+
+In the [samples directory](samples/) you find dozens of example projects demonstrating different aspects of ClojureDart and Flutter, see the [samples README](samples/README.md) to know what's what.
 
 # Conj 2025 talk and repl demo
 
@@ -49,22 +63,28 @@ Don't forget to subscribe to [Curiosities -- our newsletter on ClojureDart and m
 
 Prerequisites: Clojure and Flutter installed and on your path.
 
-Create a project directory with its `deps.edn`
+Create a project directory and download the `deps.edn` template from the latest stable release:
 ``` shell
 mkdir hello
 cd hello
-cat << EOF > deps.edn
-{:paths ["src"] ; where your cljd files are
- :deps {tensegritics/clojuredart
-        {:git/url "https://github.com/tensegritics/ClojureDart.git"
-         :sha "81b5c03a55cf52b21dc0be8ccfa4827b9889f488"}}
- :aliases {:cljd {:main-opts ["-m" "cljd.build"]}}
- :cljd/opts {:kind :flutter
-             :main acme.main}}
-EOF
+curl --fail --location https://github.com/Tensegritics/ClojureDart/releases/latest/download/deps.latest.edn --output deps.edn.tmp &&
+mv deps.edn.tmp deps.edn &&
+sed -i.bak -e 's/change\.me/acme.main/' deps.edn &&
+rm deps.edn.bak &&
+cat deps.edn
 ```
 
-(To update an existing project to the latest ClojureDart, just do `clj -M:cljd upgrade`)
+The downloaded dependency is pinned to the immutable tag and Git SHA of the latest release.
+The template uses the visible placeholder `change.me`. The `sed` command above replaces it with the main namespace used in this example:
+
+```clojure
+:cljd/opts {:kind :flutter
+            :main acme.main}
+```
+
+Replace `acme.main` in the `sed` command and in the source path below if you want to use another namespace. The comments in `deps.edn` also indicate which values are intended to be changed.
+
+(To update an existing project to the latest ClojureDart, just do `clj -M:cljd upgrade`.)
 
 Initialize project:
 
@@ -108,11 +128,6 @@ clj -M:cljd flutter
 In most environments this will spawn a desktop app.
 
 More details [there](doc/flutter-quick-start.md)
-
-# Quick starts
-
-- [For Flutter](doc/flutter-quick-start.md) to build GUIs
-- [For Plain Dart](doc/quick-start.md) to build CLI apps.
 
 # Examples
 
