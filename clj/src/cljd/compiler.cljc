@@ -3493,7 +3493,11 @@
   (let [[tag info] (resolve-symbol s {})]
     (case tag
       :def
-      (emit (list 'quote (symbol (name (:ns info)) (name (:name info)))) {})
+      (emit (list 'new 'cljd.core/Var
+              (list 'quote (symbol (name (:ns info)) (name (:name info))))
+              (list 'fn* [] s)
+              nil)
+        env)
       (throw (Exception. (str "Not a var: " s (source-info)))))))
 
 (defn emit-quote [[_ x] env]

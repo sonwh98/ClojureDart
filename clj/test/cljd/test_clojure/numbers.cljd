@@ -71,7 +71,7 @@
   (all-pairs-equal #'= [#_(byte 2) #_(short 2) (int 2) (long 2)
                         #_(bigint 2) #_(biginteger 2)])
   (all-pairs-equal #'= [(float 2.0) (double 2.0)])
-  (all-pairs-equal #'= [#(float 0.0) (double 0.0) (float -0.0) (double -0.0)])
+  (all-pairs-equal #'= [(float 0.0) (double 0.0) (float -0.0) (double -0.0)])
   (all-pairs-equal #'= [2.0M 2.00M])
   (all-pairs-equal #'= [(float 1.5) (double 1.5)])
   (all-pairs-equal #'= [1.50M 1.500M])

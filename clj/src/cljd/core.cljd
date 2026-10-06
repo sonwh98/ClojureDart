@@ -2383,6 +2383,43 @@
                 {:status :pending :val nil}))
       (.write "]"))))
 
+;; Minimal Var: what (var sym) / #'sym evaluates to. Deref calls the getter so
+;; dynamic bindings and redefinitions are seen. Equality is by symbol.
+(deftype Var [^Symbol sym ^dart:core/Function getter meta]
+  :type-only true
+  IDeref
+  (-deref [this] (getter))
+  IMeta
+  (-meta [this] meta)
+  IWithMeta
+  (-with-meta [this new-meta] (Var. sym getter new-meta))
+  IFn
+  (-invoke [this] ((getter)))
+  (-invoke [this a] ((getter) a))
+  (-invoke [this a b] ((getter) a b))
+  (-invoke [this a b c] ((getter) a b c))
+  (-invoke [this a b c d] ((getter) a b c d))
+  (-invoke [this a b c d e] ((getter) a b c d e))
+  (-invoke [this a b c d e f] ((getter) a b c d e f))
+  (-invoke [this a b c d e f g] ((getter) a b c d e f g))
+  (-invoke [this a b c d e f g h] ((getter) a b c d e f g h))
+  (-invoke [this a b c d e f g h i] ((getter) a b c d e f g h i))
+  (-invoke-more [this a b c d e f g h i rest] (apply (getter) a b c d e f g h i rest))
+  (-apply [this more] (apply (getter) more))
+  IPrint
+  (-print [o sink]
+    (doto ^StringSink sink
+      (.write "#'")
+      (.write sym)))
+  IEquiv
+  (-equiv [this other] (and (dart/is? other Var) (= sym (.-sym ^Var other))))
+  IHash
+  (-hash [this] (hash sym)))
+
+(defn var?
+  "Returns true if v is of type Var"
+  [x] (dart/is? x Var))
+
 (defn delay?
   "returns true if x is a Delay created with delay"
   [x] (dart/is? x Delay))
@@ -7570,16 +7607,18 @@
   (dart-async/ZoneSpecification
     .handleUncaughtError
     (fn [^dart-async/Zone self parent zone e st]
-      (let [f (when-some [vself (. self "[]" (var *async-error-handler*))]
+      (let [f (when-some [vself (. self "[]" 'cljd.core/*async-error-handler*)]
                 (let [vparent (some->
                                 (.-parent self)
-                                (. "[]" (var *async-error-handler*)))]
+                                (. "[]" 'cljd.core/*async-error-handler*))]
                   (when-not (identical? vparent vself)
                     @vself)))]
         (if (nil? f)
           (throw e)
           ; run in self so that bindings are visible
           (.run self #(f e st)))))))
+
+(defn -var-key [^Var v] (.-sym v))
 
 (defmacro binding
   "binding => var-symbol init-expr
@@ -7592,7 +7631,7 @@
   [bindings & body]
   `(dart/run-zoned
      :values ~(into {}
-               (map (fn [[sym v]] [(list 'var sym) (list `volatile! v)]))
+               (map (fn [[sym v]] [(list `-var-key (list 'var sym)) (list `volatile! v)]))
                (partition 2 bindings))
      :spec -async-error-handler-zone-spec
      ~@body))

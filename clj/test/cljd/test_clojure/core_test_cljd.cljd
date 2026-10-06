@@ -1239,3 +1239,15 @@
       (is (true? @a))
       (reset! $ a))
     (is (false? @@$))))
+
+(def ^:dynamic *a-dyn-var* 1)
+(def a-plain-var 10)
+
+(deftest testing-var-deref
+  (is (= 10 @#'a-plain-var))
+  (is (= 10 @(var a-plain-var)))
+  (is (= 1 @#'*a-dyn-var*))
+  (binding [*a-dyn-var* 2]
+    (is (= 2 @#'*a-dyn-var*)))
+  (is (var? #'a-plain-var))
+  (is (= #'a-plain-var #'a-plain-var)))
